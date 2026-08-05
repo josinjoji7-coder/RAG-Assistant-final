@@ -46,7 +46,6 @@ embeddings = HuggingFaceEmbeddings(
 
 # Create vector database
 
-@st.cache_resource
 def create_vectorstore(_chunks, _embeddings):
 
     database = Chroma.from_documents(
@@ -97,10 +96,12 @@ if uploaded_file:
 
     if st.button("Process PDF"):
 
-        with st.spinner("Processing PDF..."):
+     with st.spinner("Processing PDF..."):
 
-            st.session_state.database = process_pdf(pdf_path)
-            st.session_state.chat_history = []
+        st.session_state.database = None
+        st.session_state.chat_history = []
+
+        st.session_state.database = process_pdf(pdf_path)
 
         st.success("PDF processed successfully!")
 
