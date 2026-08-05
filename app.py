@@ -50,7 +50,8 @@ def create_vectorstore(_chunks, _embeddings):
 
     database = Chroma.from_documents(
         documents=_chunks,
-        embedding=_embeddings
+        embedding=_embeddings,
+        collection_name="current_pdf"
     )
 
     return database
@@ -60,18 +61,20 @@ def create_vectorstore(_chunks, _embeddings):
 def process_pdf(pdf_path):
 
     loader = PyPDFLoader(pdf_path)
+
     documents = loader.load()
 
-    # Clean extracted text
     for doc in documents:
         doc.page_content = " ".join(doc.page_content.split())
 
+
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=1000,
-        chunk_overlap=200
+        chunk_size=500,
+        chunk_overlap=100
     )
 
     chunks = splitter.split_documents(documents)
+
 
     database = create_vectorstore(
         chunks,
@@ -98,10 +101,11 @@ if uploaded_file:
 
      with st.spinner("Processing PDF..."):
 
-        st.session_state.database = None
-        st.session_state.chat_history = []
+        st.session_state.clear()
 
         st.session_state.database = process_pdf(pdf_path)
+
+        st.session_state.chat_history = []
 
         st.success("PDF processed successfully!")
 
@@ -131,31 +135,26 @@ if st.button("Get Answer"):
         # Retrieve relevant chunks
         results = st.session_state.database.similarity_search_with_score(
             question,
-            k=4
+            k=3
         )
 
 
-        st.write("## Retrieved Chunks")
+        st.write("Retrieved Chunks:")
 
         context = ""
 
-
         for i, (doc, score) in enumerate(results):
 
-            st.write(f"### Chunk {i+1}")
-            st.write("Score:", score)
+            st.write(f"Chunk {i+1}")
+            st.write(f"Score: {score}")
             st.write(doc.page_content[:500])
             st.write("---")
 
+            context += doc.page_content + "\n"
 
-            # Add retrieved text to context
-            context += f"""
-Source {i+1}:
 
-{doc.page_content}
-
-"""
-
+        st.write("FULL CONTEXT:")
+        st.write(context)
 
         prompt = f"""
 You are a helpful PDF assistant.
