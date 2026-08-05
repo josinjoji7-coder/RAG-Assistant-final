@@ -94,15 +94,12 @@ if uploaded_file:
 
     if st.button("Process PDF"):
 
-        with st.spinner("Processing PDF..."):
+     with st.spinner("Processing PDF..."):
 
-            st.session_state.database = process_pdf(
-                pdf_path
-            )
+        st.session_state.database = process_pdf(pdf_path)
+        st.session_state.chat_history = []
 
-        st.success(
-            "PDF processed successfully!"
-        )
+    st.success("PDF processed successfully!")
 
 # Question section
 
@@ -113,35 +110,32 @@ question = st.text_input(
 
 if st.button("Get Answer"):
 
-
     if st.session_state.database is None:
 
         st.warning(
             "Please upload and process a PDF first."
         )
 
-
     else:
 
-        results = st.session_state.database.similarity_search(
+        results = st.session_state.database.similarity_search_with_score(
             question,
             k=3
         )
 
+        st.write("Retrieved chunks:")
 
         context = ""
 
-        for result in results:
-
-            context += result.page_content + "\n"
-
-
+        for doc, score in results:
+            st.write("Score:", score)
+            st.write(doc.page_content[:300])
+            st.write("----------------")
+            context += doc.page_content + "\n"
 
         history = ""
 
-
         for chat in st.session_state.chat_history:
-
             history += (
                 "User: "
                 + chat["question"]
@@ -154,31 +148,29 @@ if st.button("Get Answer"):
 
 You are a helpful PDF assistant.
 
-Use only the context to answer.
+Answer the question using only the information provided in the context.
 
-Previous conversation:
-
-{history}
-
+Rules:
+- Do not use outside knowledge.
+- Do not guess or create information.
+- If the answer is not found in the context, say:
+  "I could not find this information in the PDF."
+- Give a clear and direct answer.
 
 Context:
 
 {context}
 
-
 Question:
 
 {question}
 
+Answer:
+
 """
 
-
         response = llm.invoke(prompt)
-
-
         answer = response.content
-
-
 
         st.session_state.chat_history.append(
             {
@@ -187,12 +179,8 @@ Question:
             }
         )
 
-
-
         st.write("### Answer")
-
         st.write(answer)
-
 
 
 # Display chat history
