@@ -76,9 +76,10 @@ def process_pdf(pdf_path):
     chunks = splitter.split_documents(documents)
 
 
-    database = create_vectorstore(
-        chunks,
-        embeddings
+    database = Chroma.from_documents(
+        documents=chunks,
+        embedding=embeddings,
+        collection_name="new_pdf_database"
     )
 
     return database
