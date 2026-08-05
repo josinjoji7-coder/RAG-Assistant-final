@@ -1,5 +1,5 @@
 import os
-
+import shutil
 import streamlit as st
 
 from dotenv import load_dotenv
@@ -36,6 +36,9 @@ if "database" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
+if "pdf_name" not in st.session_state:
+    st.session_state.pdf_name = None
+
 # Embedding model
 
 embeddings = HuggingFaceEmbeddings(
@@ -60,6 +63,10 @@ def create_vectorstore(_chunks, _embeddings):
 
 def process_pdf(pdf_path):
 
+    # Remove old vector database
+    if os.path.exists("vectorstore"):
+        shutil.rmtree("vectorstore")
+
     loader = PyPDFLoader(pdf_path)
 
     documents = loader.load()
@@ -69,8 +76,8 @@ def process_pdf(pdf_path):
 
 
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100
+        chunk_size=800,
+        chunk_overlap=150
     )
 
     chunks = splitter.split_documents(documents)
@@ -102,13 +109,18 @@ if uploaded_file:
 
      with st.spinner("Processing PDF..."):
 
-        st.session_state.clear()
-
         st.session_state.database = process_pdf(pdf_path)
 
+        # Store uploaded PDF name
+        st.session_state.pdf_name = uploaded_file.name
+
+        # Clear old conversation
         st.session_state.chat_history = []
 
-        st.success("PDF processed successfully!")
+     st.success(f"{uploaded_file.name} processed successfully!")
+
+if st.session_state.pdf_name:
+    st.info(f"Current PDF: {st.session_state.pdf_name}")
 
 # Question section
 
@@ -134,10 +146,19 @@ if st.button("Get Answer"):
     else:
 
         # Retrieve relevant chunks
-        results = st.session_state.database.similarity_search_with_score(
-            question,
+        if "what is" in question.lower() or "about" in question.lower():
+
+            results = st.session_state.database.similarity_search_with_score(
+            "title introduction overview",
             k=3
-        )
+            )
+
+        else:
+
+            results = st.session_state.database.similarity_search_with_score(
+            question,
+            k=5
+          )
 
 
         st.write("Retrieved Chunks:")
@@ -151,33 +172,37 @@ if st.button("Get Answer"):
             st.write(doc.page_content[:500])
             st.write("---")
 
-            context += doc.page_content + "\n"
+            context += (
+              f"Page {doc.metadata.get('page',0)+1}:\n"
+              + doc.page_content
+              + "\n\n"
+            )
 
 
         st.write("FULL CONTEXT:")
         st.write(context)
 
         prompt = f"""
-You are a helpful PDF assistant.
 
-Answer the question only using the provided context.
+        You are a PDF document assistant.
 
-Rules:
-- Do not use outside knowledge.
-- Do not guess.
-- If the answer is not available in the context, say:
-"I could not find this information in the document."
+        Answer the question based only on the provided PDF context.
 
-Context:
+        Context:
+        {context}
 
-{context}
+        Question:
+        {question}
 
-Question:
+        Instructions:
+        - First identify what the document is about.
+        - Give a short summary when asked about the document.
+        - Do not mention information outside the context.
+        - Do not guess.
 
-{question}
+        Answer:
 
-Answer:
-"""
+    """
 
 
         response = llm.invoke(prompt)
