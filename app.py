@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from langchain_community.embeddings import HuggingFaceEmbeddings
+from langchain_huggingface import HuggingFaceEmbeddings
 from langchain_community.vectorstores import Chroma
 
 from langchain_google_genai import ChatGoogleGenerativeAI
@@ -39,7 +39,9 @@ if "chat_history" not in st.session_state:
 # Embedding model
 
 embeddings = HuggingFaceEmbeddings(
-    model_name="all-MiniLM-L6-v2"
+    model_name="sentence-transformers/all-MiniLM-L6-v2",
+    model_kwargs={"device": "cpu"},
+    encode_kwargs={"normalize_embeddings": True}
 )
 
 # Create vector database
@@ -59,21 +61,23 @@ def create_vectorstore(_chunks, _embeddings):
 def process_pdf(pdf_path):
 
     loader = PyPDFLoader(pdf_path)
-
     documents = loader.load()
 
+    # Clean extracted text
+    for doc in documents:
+        doc.page_content = " ".join(doc.page_content.split())
+
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,
-        chunk_overlap=100
+        chunk_size=1000,
+        chunk_overlap=200
     )
 
     chunks = splitter.split_documents(documents)
 
-
     database = create_vectorstore(
-    chunks,
-    embeddings
-)
+        chunks,
+        embeddings
+    )
 
     return database
 
@@ -91,15 +95,14 @@ if uploaded_file:
     with open(pdf_path, "wb") as file:
         file.write(uploaded_file.getbuffer())
 
-
     if st.button("Process PDF"):
 
-     with st.spinner("Processing PDF..."):
+        with st.spinner("Processing PDF..."):
 
-        st.session_state.database = process_pdf(pdf_path)
-        st.session_state.chat_history = []
+            st.session_state.database = process_pdf(pdf_path)
+            st.session_state.chat_history = []
 
-    st.success("PDF processed successfully!")
+        st.success("PDF processed successfully!")
 
 # Question section
 
@@ -116,46 +119,53 @@ if st.button("Get Answer"):
             "Please upload and process a PDF first."
         )
 
-    else:
+    elif question.strip() == "":
 
-        results = st.session_state.database.similarity_search_with_score(
-            question,
-            k=3
+        st.warning(
+            "Please enter a question."
         )
 
-        st.write("Retrieved chunks:")
+    else:
+
+        # Retrieve relevant chunks
+        results = st.session_state.database.similarity_search_with_score(
+            question,
+            k=4
+        )
+
+
+        st.write("## Retrieved Chunks")
 
         context = ""
 
-        for doc, score in results:
+
+        for i, (doc, score) in enumerate(results):
+
+            st.write(f"### Chunk {i+1}")
             st.write("Score:", score)
-            st.write(doc.page_content[:300])
-            st.write("----------------")
-            context += doc.page_content + "\n"
+            st.write(doc.page_content[:500])
+            st.write("---")
 
-        history = ""
 
-        for chat in st.session_state.chat_history:
-            history += (
-                "User: "
-                + chat["question"]
-                + "\nAssistant: "
-                + chat["answer"]
-                + "\n"
-            )
+            # Add retrieved text to context
+            context += f"""
+Source {i+1}:
+
+{doc.page_content}
+
+"""
+
 
         prompt = f"""
-
 You are a helpful PDF assistant.
 
-Answer the question using only the information provided in the context.
+Answer the question only using the provided context.
 
 Rules:
 - Do not use outside knowledge.
-- Do not guess or create information.
-- If the answer is not found in the context, say:
-  "I could not find this information in the PDF."
-- Give a clear and direct answer.
+- Do not guess.
+- If the answer is not available in the context, say:
+"I could not find this information in the document."
 
 Context:
 
@@ -166,22 +176,16 @@ Question:
 {question}
 
 Answer:
-
 """
 
+
         response = llm.invoke(prompt)
+
         answer = response.content
 
-        st.session_state.chat_history.append(
-            {
-                "question": question,
-                "answer": answer
-            }
-        )
 
-        st.write("### Answer")
+        st.write("## Answer")
         st.write(answer)
-
 
 # Display chat history
 
